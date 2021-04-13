@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2020 Lars Fröder
+// Copyright (c) 2019-2021 Lars Fröder
 
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -27,6 +27,7 @@ extern NSString* localize(NSString* key);
 extern NSDictionary* preferences;
 
 #define CHPPlistPath @"/var/mobile/Library/Preferences/com.opa334.choicyprefs.plist"
+#define CHOICY_DYLIB_NAME @"   Choicy"
 
 extern NSDictionary* preferencesForApplicationWithID(NSString* applicationID);
 extern NSDictionary* preferencesForDaemonWithDisplayName(NSString* daemonDisplayName);
@@ -39,4 +40,12 @@ extern void BKSTerminateApplicationForReasonAndReportWithDescription(NSString *b
 
 #ifndef kCFCoreFoundationVersionNumber_iOS_13_0
 #define kCFCoreFoundationVersionNumber_iOS_13_0 1665.15
+#endif
+
+#ifndef kCFCoreFoundationVersionNumber_iOS_14_0
+#define kCFCoreFoundationVersionNumber_iOS_14_0 1740.00
+#endif
+
+#ifndef kCFCoreFoundationVersionNumber_iOS_14_1
+#define kCFCoreFoundationVersionNumber_iOS_14_1 1751.108
 #endif

@@ -139,7 +139,7 @@
 					<key>icon-size</key>
 					<string>29</string>
 					<key>predicate</key>
-					<string>(info.choicy_hasHiddenTag = TRUE OR isWebApplication = TRUE)</string>
+					<string>('hidden' IN info.tags OR isWebApplication = TRUE)</string>
 					<key>suppress-hidden-apps</key>
 					<false/>
 					<key>title</key>
@@ -264,7 +264,7 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>footerText</key>
-			<string>© 2019-2020 Lars Fröder (opa334)</string>
+			<string>© 2019-2021 Lars Fröder (opa334)</string>
 		</dict>
 	</array>
 	<key>title</key>

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2020 Lars Fröder
+// Copyright (c) 2019-2021 Lars Fröder
 
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -24,7 +24,7 @@
 @property (nonatomic) NSArray* tweakList;
 + (instancetype)sharedInstance;
 - (void)updateTweakList;
-- (NSArray*)tweakListForApplicationWithIdentifier:(NSString*)identifier linkedFrameworkIdentifiers:(NSSet*)linkedFrameworkIdentifiers;
+- (NSArray*)tweakListForApplicationWithIdentifier:(NSString*)identifier executableName:(NSString*)executableName linkedFrameworkIdentifiers:(NSSet*)linkedFrameworkIdentifiers;
 - (NSArray*)tweakListForDaemon:(CHPDaemonInfo*)daemonInfo;
 - (BOOL)oneOrMoreTweaksInjectIntoDaemon:(CHPDaemonInfo*)daemonInfo;
 @end

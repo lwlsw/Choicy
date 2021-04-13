@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2020 Lars Fröder
+// Copyright (c) 2019-2021 Lars Fröder
 
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -33,6 +33,32 @@
 - (NSString*)plistName
 {
 	return nil;
+}
+
+- (void)applySearchControllerHideWhileScrolling:(BOOL)hideWhileScrolling
+{
+	_searchController = [[UISearchController alloc] initWithSearchResultsController:nil];
+	_searchController.searchResultsUpdater = self;
+	if (@available(iOS 9.1, *)) _searchController.obscuresBackgroundDuringPresentation = NO;
+
+	if (@available(iOS 11.0, *))
+	{
+		self.navigationItem.searchController = _searchController;
+		self.navigationItem.hidesSearchBarWhenScrolling = hideWhileScrolling;
+	}
+	else
+	{
+		self.table.tableHeaderView = _searchController.searchBar;
+		[self.table setContentOffset:CGPointMake(0,44) animated:NO];
+	}
+
+	_searchKey = @"";
+}
+
+- (void)updateSearchResultsForSearchController:(UISearchController *)searchController
+{
+	_searchKey = searchController.searchBar.text;
+	[self reloadSpecifiers];
 }
 
 - (NSMutableArray*)specifiers

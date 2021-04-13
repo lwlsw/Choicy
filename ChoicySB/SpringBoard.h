@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2020 Lars Fröder
+// Copyright (c) 2019-2021 Lars Fröder
 
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -47,8 +47,8 @@
 @interface SBSApplicationShortcutIcon : NSObject
 @end
 
-@interface SBSApplicationShortcutSystemItem : SBSApplicationShortcutIcon
-- (instancetype)initWithSystemImageName:(NSString*)systemImageName;
+@interface SBSApplicationShortcutCustomImageIcon : SBSApplicationShortcutIcon
+- (id)initWithImageData:(id)arg1 dataType:(long long)arg2 isTemplate:(bool)arg3;
 @end
 
 @interface SBSApplicationShortcutItem : NSObject

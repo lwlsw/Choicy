@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2020 Lars Fröder
+// Copyright (c) 2019-2021 Lars Fröder
 
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -22,10 +22,10 @@
 #import "../Shared.h"
 #import "CHPDaemonList.h"
 #import "CHPTweakList.h"
+#import <AppList/AppList.h>
+#import <mach-o/dyld.h>
 
-int hookingPlatform = 0;
-
-BOOL customTweakConfigurationWorks;
+NSArray* dylibsBeforeChoicy;
 
 #import <dirent.h>
 
@@ -35,6 +35,40 @@ void reloadPreferences()
 {
 	preferences = [NSDictionary dictionaryWithContentsOfFile:CHPPlistPath];
 	[[NSNotificationCenter defaultCenter] postNotification:[NSNotification notificationWithName:@"preferencesDidReload" object:nil]];
+}
+
+NSString* getInjectionPlatform()
+{
+	static NSString* injectionPlatform = nil;
+
+	if(!injectionPlatform)
+	{
+		for (uint32_t i = 0; i < _dyld_image_count(); i++)
+		{
+			const char *pathC = _dyld_get_image_name(i);
+			NSString* path = [NSString stringWithUTF8String:pathC];
+
+			if([path isEqualToString:@"/usr/lib/substitute-inserter.dylib"])
+			{
+				injectionPlatform = @"Substitute";
+			}
+			else if([path isEqualToString:@"/usr/lib/TweakInject.dylib"])
+			{
+				injectionPlatform = @"libhooker";
+			}
+			else if([path isEqualToString:@"/usr/lib/substrate/SubstrateInserter.dylib"])
+			{
+				injectionPlatform = @"Substrate";
+			}
+		}
+
+		if(!injectionPlatform)
+		{
+			injectionPlatform = localize(@"THE_INJECTION_PLATFORM");
+		}
+	}
+
+	return injectionPlatform;
 }
 
 @implementation CHPRootListController
@@ -80,9 +114,23 @@ void reloadPreferences()
 {
 	[super viewDidLoad];
 
-	[self updateGlobalConfigurationAvailability];
+	if([ALApplicationList sharedApplicationList].applications.count == 0)
+	{
+		UIAlertController* errorAlert = [UIAlertController alertControllerWithTitle:localize(@"APPLIST_ROCKETBOOTSTRAP_ERROR_TITLE") message:localize(@"APPLIST_ROCKETBOOTSTRAP_ERROR_MESSAGE") preferredStyle:UIAlertControllerStyleAlert];
+		
+		UIAlertAction* openRepoAction = [UIAlertAction actionWithTitle:localize(@"OPEN_REPO") style:UIAlertActionStyleDefault handler:^(UIAlertAction* action)
+		{
+			[[UIApplication sharedApplication] openURL:[NSURL URLWithString:@"https://rpetri.ch/repo"]];
+		}];
+		UIAlertAction* closeAction = [UIAlertAction actionWithTitle:localize(@"CLOSE") style:UIAlertActionStyleDefault handler:nil];
 
-	if(!customTweakConfigurationWorks)
+		[errorAlert addAction:openRepoAction];
+		[errorAlert addAction:closeAction];
+
+		[self presentViewController:errorAlert animated:YES completion:nil];
+	}
+
+	if(dylibsBeforeChoicy)
 	{
 		PSSpecifier* dontShowAgainSpecifier = [PSSpecifier preferenceSpecifierNamed:@"dontShowWarningAgain"
 						target:self
@@ -100,25 +148,26 @@ void reloadPreferences()
 
 		if(![dontShowAgainNum boolValue])
 		{
-			NSString* hookingPlatformName;
+			NSString* injectionPlatform = getInjectionPlatform();
 
-			if(hookingPlatform == 1)
+			NSString* message = [NSString stringWithFormat:localize(@"WARNING_ALERT_MESSAGE"), injectionPlatform];
+
+			if([injectionPlatform isEqualToString:@"Substrate"])
 			{
-				hookingPlatformName = @"Substrate";
-			}
-			else if(hookingPlatform == 2)
-			{
-				hookingPlatformName = @"Substitute";
+				message = [message stringByAppendingString:[@" " stringByAppendingString:localize(@"CHOICYLOADER_ADVICE")]];
 			}
 
-			UIAlertController* warningAlert = [UIAlertController alertControllerWithTitle:localize(@"WARNING_ALERT_TITLE") message:[NSString stringWithFormat:localize(@"WARNING_ALERT_MESSAGE"), hookingPlatformName] preferredStyle:UIAlertControllerStyleAlert];
+			UIAlertController* warningAlert = [UIAlertController alertControllerWithTitle:localize(@"WARNING_ALERT_TITLE") message:message preferredStyle:UIAlertControllerStyleAlert];
 		
-			UIAlertAction* openRepoAction = [UIAlertAction actionWithTitle:localize(@"OPEN_REPO") style:UIAlertActionStyleDefault handler:^(UIAlertAction* action)
+			if([injectionPlatform isEqualToString:@"Substrate"])
 			{
-				[[UIApplication sharedApplication] openURL:[NSURL URLWithString:@"https://opa334.github.io"]];
-			}];
+				UIAlertAction* openRepoAction = [UIAlertAction actionWithTitle:localize(@"OPEN_REPO") style:UIAlertActionStyleDefault handler:^(UIAlertAction* action)
+				{
+					[[UIApplication sharedApplication] openURL:[NSURL URLWithString:@"https://opa334.github.io"]];
+				}];
 
-			[warningAlert addAction:openRepoAction];
+				[warningAlert addAction:openRepoAction];
+			}
 
 			UIAlertAction* dontShowAgainAction = [UIAlertAction actionWithTitle:localize(@"DONT_SHOW_AGAIN") style:UIAlertActionStyleDefault handler:^(UIAlertAction* action)
 			{
@@ -141,75 +190,67 @@ void reloadPreferences()
 	}
 }
 
-- (void)updateGlobalConfigurationAvailability
-{
-	if(!customTweakConfigurationWorks)
-	{
-		PSSpecifier* globalTweakConfiguration = [self specifierForID:@"GLOBAL_TWEAK_CONFIGURATION"];
-		[globalTweakConfiguration setProperty:@NO forKey:@"enabled"];
-		[self reloadSpecifier:globalTweakConfiguration];
-	}
-}
-
-- (void)reloadSpecifiers
-{
-	[super reloadSpecifiers];
-	[self updateGlobalConfigurationAvailability];
-}
-
 @end
 
 extern void initCHPApplicationPreferenceViewController();
 extern void initCHPPreferencesTableDataSource();
 
-void checkIfCustomTweakConfigurationWorks()
+void determineLoadingOrder()
 {
-	NSString* targetLoaderPath;
+	NSMutableArray* dylibsInOrder = [NSMutableArray new];
 
-	if([[NSFileManager defaultManager] fileExistsAtPath:@"/usr/lib/substrate/SubstrateInserter.dylib"])
+	BOOL isSubstrate = [getInjectionPlatform() isEqualToString:@"Substrate"];
+	if(isSubstrate)
 	{
-		targetLoaderPath = @"/usr/lib/substrate/SubstrateLoader.dylib";
-		hookingPlatform = 1;
-	}
-	else if([[NSFileManager defaultManager] fileExistsAtPath:@"/usr/lib/substitute-inserter.dylib"])
-	{
-		targetLoaderPath = @"/usr/lib/substitute-loader.dylib";
-		hookingPlatform = 2;
-	}
-	
-	DIR *dir;
-    struct dirent* dp;
-    dir = opendir("/Library/MobileSubstrate/DynamicLibraries");
-	dp=readdir(dir); //.
-	dp=readdir(dir); //..
-
-	while((dp = readdir(dir)) != NULL)
-	{
-		NSString* filename = [NSString stringWithCString:dp->d_name encoding:NSUTF8StringEncoding];
-
-		if([filename isEqualToString:@"000_Choicy.dylib"])
+		//SubstrateLoader doesn't sort anything and instead process the raw output of readdir
+		DIR *dir;
+		struct dirent* dp;
+		dir = opendir("/Library/MobileSubstrate/DynamicLibraries");
+		dp=readdir(dir); //.
+		dp=readdir(dir); //..
+		while((dp = readdir(dir)) != NULL)
 		{
-			customTweakConfigurationWorks = YES;
-			break;
-		}
+			NSString* filename = [NSString stringWithCString:dp->d_name encoding:NSUTF8StringEncoding];
 
-		if([filename.pathExtension isEqualToString:@"dylib"])
-		{
-			customTweakConfigurationWorks = NO;
-			break;
+			if([filename.pathExtension isEqualToString:@"dylib"])
+			{
+				[dylibsInOrder addObject:[filename stringByDeletingPathExtension]];
+			}
 		}
 	}
-
-	if(!customTweakConfigurationWorks)
+	else
 	{
-		NSDictionary* targetLoaderAttributes = [[NSFileManager defaultManager] attributesOfItemAtPath:targetLoaderPath error:nil];
+		//Anything but substrate sorts the dylibs alphabetically
+		NSMutableArray* contents = [[[NSFileManager defaultManager] contentsOfDirectoryAtPath:@"/Library/MobileSubstrate/DynamicLibraries" error:nil] mutableCopy];
+		NSArray* plists = [contents filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"SELF ENDSWITH %@", @"plist"]];
+		for(NSString* plist in plists)
+		{
+			NSString* dylibName = [plist stringByDeletingPathExtension];
+			[dylibsInOrder addObject:dylibName];
+		}
+		[dylibsInOrder sortUsingSelector:@selector(caseInsensitiveCompare:)];
+	}
+
+	NSUInteger choicyIndex = [dylibsInOrder indexOfObject:CHOICY_DYLIB_NAME];
+
+	if(choicyIndex == NSNotFound) return;
+
+	if(choicyIndex != 0)
+	{
+		dylibsBeforeChoicy = [dylibsInOrder subarrayWithRange:NSMakeRange(0,choicyIndex)];
+	}
+
+	if(dylibsBeforeChoicy && isSubstrate)
+	{
+		NSDictionary* targetLoaderAttributes = [[NSFileManager defaultManager] attributesOfItemAtPath:@"/usr/lib/substrate/SubstrateLoader.dylib" error:nil];
 
 		if([[targetLoaderAttributes objectForKey:NSFileType] isEqualToString:NSFileTypeSymbolicLink])
 		{
-			NSString* destination = [[NSFileManager defaultManager] destinationOfSymbolicLinkAtPath:targetLoaderPath error:nil];
+			NSString* destination = [[NSFileManager defaultManager] destinationOfSymbolicLinkAtPath:@"/usr/lib/substrate/SubstrateLoader.dylib" error:nil];
 			if([destination isEqualToString:@"/usr/lib/ChoicyLoader.dylib"])
 			{
-				customTweakConfigurationWorks = YES;
+				// If ChoicyLoader is installed on Substrate, Choicy always loads first
+				dylibsBeforeChoicy = nil;
 			}
 		}
 	}
@@ -231,5 +272,5 @@ static void init(void)
 		initCHPPreferencesTableDataSource();
 	}
 
-	checkIfCustomTweakConfigurationWorks();
+	determineLoadingOrder();
 }

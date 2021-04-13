@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2020 Lars Fröder
+// Copyright (c) 2019-2021 Lars Fröder
 
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -27,10 +27,15 @@
 #import "CHPDaemonList.h"
 #import "CHPApplicationDaemonConfigurationListController.h"
 
+@interface PSListController()
+- (id)controllerForSpecifier:(PSSpecifier*)specifier;
+@end
+
 @implementation CHPDaemonListController
 
 - (void)viewDidLoad
 {
+	[self applySearchControllerHideWhileScrolling:NO];
 	[[CHPDaemonList sharedInstance] addObserver:self];
 
 	[[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(reloadValueOfSelectedSpecifier) name:@"preferencesDidReload" object:nil];
@@ -73,6 +78,12 @@
 	{
 		specifiers = [NSMutableArray new];
 
+		if(kCFCoreFoundationVersionNumber < kCFCoreFoundationVersionNumber_iOS_11_0)
+		{
+			[specifiers addObject:[PSSpecifier emptyGroupSpecifier]];
+			[specifiers addObject:[PSSpecifier emptyGroupSpecifier]];
+		}
+
 		if(![CHPDaemonList sharedInstance].loaded)
 		{
 			PSSpecifier* loadingIndicator = [PSSpecifier preferenceSpecifierNamed:@""
@@ -87,39 +98,6 @@
 		}
 		else
 		{
-			NSArray<CHPDaemonInfo*>* daemonList = [CHPDaemonList sharedInstance].daemonList;
-
-			for(CHPDaemonInfo* info in daemonList)
-			{
-				if(_showsAllDaemons || [_suggestedDaemons containsObject:[info displayName]])
-				{
-					PSSpecifier* specifier = [PSSpecifier preferenceSpecifierNamed:[info displayName]
-								target:self
-								set:nil
-								get:@selector(previewStringForSpecifier:)
-								detail:[CHPApplicationDaemonConfigurationListController class]
-								cell:PSLinkListCell
-								edit:nil];
-					
-					[specifier setProperty:@YES forKey:@"enabled"];
-					[specifier setProperty:[info displayName] forKey:@"key"];
-					[specifier setProperty:info forKey:@"daemonInfo"];
-					[specifier setProperty:@NO forKey:@"isApplication"];
-
-					[specifiers addObject:specifier];
-				}
-			}
-
-			PSSpecifier* buttonGroup = [PSSpecifier preferenceSpecifierNamed:@""
-							target:self
-							set:nil
-							get:nil
-							detail:nil
-							cell:PSGroupCell
-							edit:nil];
-
-			[specifiers addObject:buttonGroup];
-
 			NSString* toggleName;
 
 			if(_showsAllDaemons)
@@ -142,6 +120,41 @@
 			[specifier setProperty:@YES forKey:@"enabled"];
 			specifier.buttonAction = @selector(daemonTogglePressed:);
 			[specifiers addObject:specifier];
+
+			PSSpecifier* daemonsGroup = [PSSpecifier emptyGroupSpecifier];
+			[daemonsGroup setProperty:localize(@"DAEMON_LIST_BOTTOM_NOTICE") forKey:@"footerText"];
+			[specifiers addObject:daemonsGroup];
+
+			NSArray<CHPDaemonInfo*>* daemonList = [CHPDaemonList sharedInstance].daemonList;
+
+			for(CHPDaemonInfo* info in daemonList)
+			{
+				if(_showsAllDaemons || [_suggestedDaemons containsObject:[info displayName]])
+				{
+					if(_searchKey && ![_searchKey isEqualToString:@""])
+					{
+						if(![[info displayName] localizedStandardContainsString:_searchKey])
+						{
+							continue;
+						}
+					}
+					
+					PSSpecifier* specifier = [PSSpecifier preferenceSpecifierNamed:[info displayName]
+								target:self
+								set:nil
+								get:@selector(previewStringForSpecifier:)
+								detail:[CHPApplicationDaemonConfigurationListController class]
+								cell:PSLinkListCell
+								edit:nil];
+					
+					[specifier setProperty:@YES forKey:@"enabled"];
+					[specifier setProperty:[info displayName] forKey:@"key"];
+					[specifier setProperty:info forKey:@"daemonInfo"];
+					[specifier setProperty:@NO forKey:@"isApplication"];
+
+					[specifiers addObject:specifier];
+				}
+			}
 		}
 
 		[self setValue:specifiers forKey:@"_specifiers"];
@@ -199,6 +212,19 @@ extern NSString* previewStringForSettings(NSDictionary* settings);
 {
 	[self updateSuggestedDaemons];
 	[self reloadSpecifiers];
+}
+
+- (id)controllerForSpecifier:(PSSpecifier*)specifier
+{
+	if(kCFCoreFoundationVersionNumber < kCFCoreFoundationVersionNumber_iOS_11_0)
+	{
+		[UIView performWithoutAnimation:^
+		{
+			_searchController.active = NO;
+		}];
+	}
+
+	return [super controllerForSpecifier:specifier];
 }
 
 @end

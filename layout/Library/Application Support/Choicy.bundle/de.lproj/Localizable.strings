@@ -32,7 +32,13 @@
 "CREDITS" = "Credits";
 "RESPRING" = "Respring";
 "WARNING_ALERT_TITLE" = "Warnung";
-"WARNING_ALERT_MESSAGE" = "Es wurde festgestellt, dass Globale Tweak Konfiguration und prozessspezifische benutzerdefinierte Optionen auf diesem Gerät nicht funktionieren werden, da %@ Choicy nicht zuerst lädt, die Optionen wurden daher deaktiviert. Zur Umgehung des Problems kann ChoicyLoader von der Quelle https://opa334.github.io installiert werden.";
+"THE_INJECTION_PLATFORM" = "die Injektionsplattform";
+"WARNING_ALERT_MESSAGE" = "Es wurde festgestellt, dass einige Tweaks nicht konfiguriert werden können (außer über den 'Tweaks deaktivieren' Schalter bei Apps), da %@ Choicy nicht zuerst lädt, die betroffenen Tweaks werden daher ausgegraut.";
+"CHOICYLOADER_ADVICE" = "Zur Umgehung des Problems kann ChoicyLoader von der Quelle https://opa334.github.io installiert werden.";
 "OPEN_REPO" = "Quelle öffnen";
 "DONT_SHOW_AGAIN" = "Nie wieder anzeigen";
 "CLOSE" = "Schließen";
+"DAEMON_LIST_BOTTOM_NOTICE" = "Hintergrunddienste in welche kein Tweak geladen wird, werden automatisch ausgeblendet";
+"PACKAGE" = "Packet";
+"APPLIST_ROCKETBOOTSTRAP_ERROR_TITLE" = "AppList / RocketBootstrap Fehler";
+"APPLIST_ROCKETBOOTSTRAP_ERROR_MESSAGE" = "AppList funktioniert auf deinem Gerät nicht, das Antippen von 'Applikationen' wird entweder die Einstellungsapp crashen oder einen Fehler anzeigen. Stelle sicher, dass du die neuste Version deines Jailbreaks beuntzt und die neuste Version von RocketBootstrap (Repo: https://rpetri.ch/repo) installiert ist.";

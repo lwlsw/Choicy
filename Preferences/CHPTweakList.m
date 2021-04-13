@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2020 Lars Fröder
+// Copyright (c) 2019-2021 Lars Fröder
 
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -55,10 +55,12 @@
 		}
 	}
 
+	[tweakListM sortUsingSelector:@selector(caseInsensitiveCompare:)];
+
 	self.tweakList = [tweakListM copy];
 }
 
-- (NSArray*)tweakListForApplicationWithIdentifier:(NSString*)identifier linkedFrameworkIdentifiers:(NSSet*)linkedFrameworkIdentifiers
+- (NSArray*)tweakListForApplicationWithIdentifier:(NSString*)identifier executableName:(NSString*)executableName linkedFrameworkIdentifiers:(NSSet*)linkedFrameworkIdentifiers
 {
 	NSMutableArray* tweakListForApplication = [NSMutableArray new];
 
@@ -67,6 +69,13 @@
 		if([tweakInfo.filterBundles containsObject:identifier])
 		{
 			[tweakListForApplication addObject:tweakInfo];
+			continue;
+		}
+
+		if([tweakInfo.filterExecutables containsObject:executableName])
+		{
+			[tweakListForApplication addObject:tweakInfo];
+			continue;
 		}
 
 		for(NSString* frameworkIdentifier in linkedFrameworkIdentifiers)
@@ -74,6 +83,7 @@
 			if([tweakInfo.filterBundles containsObject:frameworkIdentifier])
 			{
 				[tweakListForApplication addObject:tweakInfo];
+				break;
 			}
 		}
 	}
@@ -90,6 +100,13 @@
 		if([tweakInfo.filterExecutables containsObject:[daemonInfo displayName]])
 		{
 			[tweakListForDaemon addObject:tweakInfo];
+			continue;
+		}
+
+		if([tweakInfo.filterBundles containsObject:[daemonInfo displayName]])
+		{
+			[tweakListForDaemon addObject:tweakInfo];
+			continue;
 		}
 
 		for(NSString* frameworkIdentifier in daemonInfo.linkedFrameworkIdentifiers)
@@ -97,6 +114,7 @@
 			if([tweakInfo.filterBundles containsObject:frameworkIdentifier])
 			{
 				[tweakListForDaemon addObject:tweakInfo];
+				break;
 			}
 		}
 	}
@@ -114,6 +132,11 @@
 		}
 		
 		if([tweakInfo.filterExecutables containsObject:[daemonInfo displayName]])
+		{
+			return YES;
+		}
+
+		if([tweakInfo.filterBundles containsObject:[daemonInfo displayName]])
 		{
 			return YES;
 		}

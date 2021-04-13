@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2020 Lars Fröder
+// Copyright (c) 2019-2021 Lars Fröder
 
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -20,6 +20,8 @@
 
 #import "SpringBoard.h"
 #import "../Shared.h"
+
+NSBundle* choicyBundle;
 
 void reloadPreferences()
 {
@@ -68,7 +70,10 @@ BOOL shouldEnableSafeModeForApplicationWithID(NSString* applicationID)
 
 	if(settingsForApp && [settingsForApp isKindOfClass:[NSDictionary class]])
 	{
-		safeMode = ((NSNumber*)[settingsForApp objectForKey:@"tweakInjectionDisabled"]).boolValue;
+		if(![applicationID isEqualToString:@"com.apple.Preferences"])
+		{
+			safeMode = ((NSNumber*)[settingsForApp objectForKey:@"tweakInjectionDisabled"]).boolValue;
+		}
 	}
 
 	if([toggleOneTimeApplicationID isEqualToString:applicationID])
@@ -119,32 +124,6 @@ BOOL shouldShow3DTouchOptionForSafeModeState(BOOL safeModeState)
 }
 
 %end
-%end
-
-%hook SBApplicationInfo
-
-- (id)valueForKey:(NSString*)key
-{
-	if([key isEqualToString:@"choicy_executablePath"])
-	{
-		return self.executableURL.path;
-	}
-
-	if([key isEqualToString:@"choicy_hasHiddenTag"])
-	{
-		if([self respondsToSelector:@selector(hasHiddenTag)])
-		{
-			return @(self.hasHiddenTag);
-		}
-		else if([self respondsToSelector:@selector(tags)])
-		{
-			return @([self.tags containsObject:@"hidden"]);
-		}
-	}
-
-	return %orig;
-}
-
 %end
 
 %hook FBProcessManager
@@ -213,17 +192,22 @@ BOOL shouldShow3DTouchOptionForSafeModeState(BOOL safeModeState)
 	if(shouldShow3DTouchOptionForSafeModeState(isSafeMode))
 	{
 		SBSApplicationShortcutItem* toggleSafeModeOnceItem = [[%c(SBSApplicationShortcutItem) alloc] init];
+		NSString *imageName;
 
 		if(isSafeMode)
 		{
 			toggleSafeModeOnceItem.localizedTitle = localize(@"LAUNCH_WITH_TWEAKS");
+			imageName = @"AppLaunchIcon";
 		}
 		else
 		{
 			toggleSafeModeOnceItem.localizedTitle = localize(@"LAUNCH_WITHOUT_TWEAKS");
+			imageName = @"AppLaunchIcon_Crossed";
 		}
-		
-		//toggleSafeModeOnceItem.icon = [[%c(SBSApplicationShortcutSystemItem) alloc] initWithSystemImageName:@"fx"];
+
+		UIImage* imageToSet = [[UIImage imageNamed:imageName inBundle:choicyBundle compatibleWithTraitCollection:nil] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+		toggleSafeModeOnceItem.icon = [[%c(SBSApplicationShortcutCustomImageIcon) alloc] initWithImageData:UIImagePNGRepresentation(imageToSet) dataType:0 isTemplate:1];
+
 		toggleSafeModeOnceItem.bundleIdentifierToLaunch = applicationID;
 		toggleSafeModeOnceItem.type = @"com.opa334.choicy.toggleSafeModeOnce";
 
@@ -278,7 +262,6 @@ BOOL shouldShow3DTouchOptionForSafeModeState(BOOL safeModeState)
 			toggleSafeModeOnceItem.localizedTitle = localize(@"LAUNCH_WITHOUT_TWEAKS");
 		}
 		
-		//toggleSafeModeOnceItem.icon = [[%c(SBSApplicationShortcutSystemItem) alloc] init];
 		toggleSafeModeOnceItem.bundleIdentifierToLaunch = applicationID;
 		toggleSafeModeOnceItem.type = @"com.opa334.choicy.toggleSafeModeOnce";
 
@@ -314,6 +297,24 @@ BOOL shouldShow3DTouchOptionForSafeModeState(BOOL safeModeState)
 
 %end
 
+%hook SBUIAction
+
+- (id)initWithTitle:(id)title subtitle:(id)arg2 image:(id)image badgeView:(id)arg4 handler:(id)arg5
+{
+    if([title isEqualToString:localize(@"LAUNCH_WITHOUT_TWEAKS")])
+	{
+        image = [[UIImage imageNamed:@"AppLaunchIcon_Crossed_Big" inBundle:choicyBundle compatibleWithTraitCollection:nil] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+    }
+	else if([title isEqualToString:localize(@"LAUNCH_WITH_TWEAKS")])
+	{
+		image = [[UIImage imageNamed:@"AppLaunchIcon_Big" inBundle:choicyBundle compatibleWithTraitCollection:nil] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+	}
+
+    return %orig;
+}
+
+%end
+
 %end
 
 @interface FBSystemService
@@ -333,6 +334,8 @@ void respring(CFNotificationCenterRef center, void *observer, CFStringRef name, 
 	reloadPreferences();
 	CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, (CFNotificationCallback)reloadPreferences, CFSTR("com.opa334.choicyprefs/ReloadPrefs"), NULL, CFNotificationSuspensionBehaviorDeliverImmediately);
 	CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, respring, CFSTR("com.opa334.choicy/respring"), NULL, CFNotificationSuspensionBehaviorDeliverImmediately);
+
+	choicyBundle = [NSBundle bundleWithPath:@"/Library/Application Support/Choicy.bundle"];
 
 	if(kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_13_0)
 	{

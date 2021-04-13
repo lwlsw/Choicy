@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2020 Lars Fröder
+// Copyright (c) 2019-2021 Lars Fröder
 
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -89,32 +89,27 @@
 	for(NSURL* daemonPlistURL in daemonPlists)
 	{
 		NSDictionary* daemonDictionary = [NSDictionary dictionaryWithContentsOfURL:daemonPlistURL];
-		//禁用检查禁用属性，因为有的二进制文件即使是禁用状态，有时候也会启动。
-		//Disable check disabled attribute, Because some binary files are sometimes started even if they are disabled.
-		//NSNumber* disabled = [daemonDictionary objectForKey:@"Disabled"];
-		//if(!disabled.boolValue)
-		//{
-			CHPDaemonInfo* info = [[CHPDaemonInfo alloc] init];
+		
+		CHPDaemonInfo* info = [[CHPDaemonInfo alloc] init];
 
-			info.executablePath = [daemonDictionary objectForKey:@"Program"];
+		info.executablePath = [daemonDictionary objectForKey:@"Program"];
 
-			if(!info.executablePath)
+		if(!info.executablePath)
+		{
+			NSArray* programArguments = [daemonDictionary objectForKey:@"ProgramArguments"];
+			if(programArguments.count > 0)
 			{
-				NSArray* programArguments = [daemonDictionary objectForKey:@"ProgramArguments"];
-				if(programArguments.count > 0)
-				{
-					info.executablePath = programArguments.firstObject;
-				}
+				info.executablePath = programArguments.firstObject;
 			}
+		}
 
-			info.plistIdentifier = [daemonPlistURL lastPathComponent].stringByDeletingPathExtension;
+		info.plistIdentifier = [daemonPlistURL lastPathComponent].stringByDeletingPathExtension;
 
-			if(info.executablePath && [[NSFileManager defaultManager] fileExistsAtPath:info.executablePath] && ![info.plistIdentifier hasSuffix:@"Jetsam"] && ![info.plistIdentifier hasSuffix:@"SimulateCrash"] && ![info.plistIdentifier hasSuffix:@"_v2"] && ![info.plistIdentifier isEqualToString:@"com.apple.SpringBoard"]) //Filter out some useless entries
+		if(info.executablePath && [[NSFileManager defaultManager] fileExistsAtPath:info.executablePath] && ![info.plistIdentifier hasSuffix:@"Jetsam"] && ![info.plistIdentifier hasSuffix:@"SimulateCrash"] && ![info.plistIdentifier hasSuffix:@"_v2"] && ![info.plistIdentifier isEqualToString:@"com.apple.SpringBoard"]) //Filter out some useless entries
+		{
+			if(![self daemonList:daemonListM containsDisplayName:info.displayName])
 			{
-				if(![self daemonList:daemonListM containsDisplayName:info.displayName])
-				{
-				   [daemonListM addObject:info];
-				}
+				[daemonListM addObject:info];
 			}
 		//}
 	}
@@ -171,7 +166,7 @@
 
 	// On A12 unc0ver, using contentsOfDirectoryAtURL on /usr/libexec locks the thread and leaves a kernel thread looping
 	// This causes all sorts of issues and heats the device up
-	// This will eventually be fixed inside unc0ver
+	// This has been fixed in unc0ver 4.0, but we still use the old solution because some people might not be updated to 4.0
 	// The C API is not affected by this issue, so we just use it instead
 	DIR *dir;
     struct dirent* dp;
@@ -230,7 +225,7 @@
 
 	for(CHPDaemonInfo* daemonInfo in [daemonListM reverseObjectEnumerator])
 	{
-		daemonInfo.linkedFrameworkIdentifiers = frameworkBundleIDsForMachoAtPath(nil, daemonInfo.executablePath);
+		daemonInfo.linkedFrameworkIdentifiers = frameworkBundleIDsForMachoAtPath(daemonInfo.executablePath);
 
 		if(![tweakList oneOrMoreTweaksInjectIntoDaemon:daemonInfo])
 		{

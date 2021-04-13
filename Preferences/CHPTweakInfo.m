@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2020 Lars Fröder
+// Copyright (c) 2019-2021 Lars Fröder
 
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -37,9 +37,9 @@
 		self.filterBundles = [filter objectForKey:@"Bundles"];
 		self.filterExecutables = [filter objectForKey:@"Executables"];
 
-		//If a plist filters classes, treat it as UIKit (maybe inaccurate, maybe not)
+		//If a plist filters classes, treat it as Security (not very accurate, but better safe than sorry)
 		NSArray* classes = [filter objectForKey:@"Classes"];
-		if(classes && classes.count > 0 && ![self.filterBundles containsObject:@"com.apple.UIKit"])
+		if(classes && classes.count > 0 && ![self.filterBundles containsObject:@"com.apple.Security"])
 		{
 			if(!self.filterBundles)
 			{
@@ -47,12 +47,17 @@
 			}
 			else
 			{
-				self.filterBundles = [self.filterBundles arrayByAddingObject:@"com.apple.UIKit"];
+				self.filterBundles = [self.filterBundles arrayByAddingObject:@"com.apple.Security"];
 			}
 		}
 	}
 
 	return self;
+}
+
+- (NSComparisonResult)caseInsensitiveCompare:(CHPTweakInfo*)info
+{
+	return [self.dylibName caseInsensitiveCompare:info.dylibName];
 }
 
 - (NSString*)description

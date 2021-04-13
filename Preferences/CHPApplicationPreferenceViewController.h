@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2020 Lars Fröder
+// Copyright (c) 2019-2021 Lars Fröder
 
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -19,10 +19,12 @@
 // SOFTWARE.
 
 #import <Preferences/PSListController.h>
+#import <Preferences/PSSpecifier.h>
 
 @interface ALApplicationPreferenceViewController : PSListController
 - (id)valueTitleForCellAtIndexPath:(NSIndexPath *)indexPath;
 - (id)valueForCellAtIndexPath:(NSIndexPath *)indexPath;
+- (void)loadFromSpecifier:(PSSpecifier *)specifier;
 @end
 
 @interface ALApplicationTableDataSource : NSObject

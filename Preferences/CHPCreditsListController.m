@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2020 Lars Fröder
+// Copyright (c) 2019-2021 Lars Fröder
 
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -46,6 +46,11 @@
 - (void)openUnSub
 {
 	[[UIApplication sharedApplication] openURL:[NSURL URLWithString:@"https://github.com/NepetaDev/UnSub"]];
+}
+
+- (void)openBrendonjkding
+{
+	[[UIApplication sharedApplication] openURL:[NSURL URLWithString:@"https://github.com/brendonjkding"]];
 }
 
 @end

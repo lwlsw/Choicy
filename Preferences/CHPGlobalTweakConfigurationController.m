@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2020 Lars Fröder
+// Copyright (c) 2019-2021 Lars Fröder
 
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -21,6 +21,8 @@
 #import "CHPGlobalTweakConfigurationController.h"
 #import "CHPTweakList.h"
 #import "CHPTweakInfo.h"
+#import "CHPRootListController.h"
+#import "CHPDPKGFetcher.h"
 #import "../Shared.h"
 
 @implementation CHPGlobalTweakConfigurationController
@@ -35,6 +37,12 @@
 	return @"GlobalTweakConfiguration";
 }
 
+- (void)viewDidLoad
+{
+	[self applySearchControllerHideWhileScrolling:YES];
+	[super viewDidLoad];
+}
+
 - (NSMutableArray*)specifiers
 {
 	if(![self valueForKey:@"_specifiers"])
@@ -45,9 +53,16 @@
 
 		for(CHPTweakInfo* tweakInfo in [CHPTweakList sharedInstance].tweakList)
 		{
-			if([tweakInfo.dylibName containsString:@"Choicy"])
+			if([tweakInfo.dylibName containsString:@"Choicy"] || [tweakInfo.dylibName isEqualToString:@"PreferenceLoader"] || [tweakInfo.dylibName isEqualToString:@"AppList"])
 			{
 				continue;
+			}
+			if(_searchKey && ![_searchKey isEqualToString:@""])
+			{
+				if(![tweakInfo.dylibName localizedStandardContainsString:_searchKey])
+				{
+					continue;
+				}
 			}
 
 			PSSpecifier* tweakSpecifier = [PSSpecifier preferenceSpecifierNamed:tweakInfo.dylibName
@@ -57,10 +72,24 @@
 						  detail:nil
 						  cell:PSSwitchCell
 						  edit:nil];
+
+			BOOL enabled = YES;
+
+			if([dylibsBeforeChoicy containsObject:tweakInfo.dylibName])
+			{
+				enabled = NO;
+			}
 			
-			[tweakSpecifier setProperty:@YES forKey:@"enabled"];
+			[tweakSpecifier setProperty:NSClassFromString(@"CHPSubtitleSwitch") forKey:@"cellClass"];
+			[tweakSpecifier setProperty:@(enabled) forKey:@"enabled"];
 			[tweakSpecifier setProperty:tweakInfo.dylibName forKey:@"key"];
 			[tweakSpecifier setProperty:@YES forKey:@"default"];
+
+			NSString* package = [[CHPDPKGFetcher sharedInstance] getPackageNameForDylibWithName:tweakInfo.dylibName];
+			if(package)
+			{
+				[tweakSpecifier setProperty:[NSString stringWithFormat:@"%@: %@", localize(@"PACKAGE"), package] forKey:@"subtitle"];
+			}
 
 			[specifiers addObject:tweakSpecifier];
 		}
@@ -90,7 +119,14 @@
 
 - (id)readValueForTweakWithSpecifier:(PSSpecifier*)specifier
 {
-	if([_globalTweakBlacklist containsObject:[specifier propertyForKey:@"key"]])
+	NSString* key = [specifier propertyForKey:@"key"];
+
+	if([dylibsBeforeChoicy containsObject:key])
+	{
+		return @1;
+	}
+
+	if([_globalTweakBlacklist containsObject:key])
 	{
 		return @0;
 	}

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2020 Lars Fröder
+// Copyright (c) 2019-2021 Lars Fröder
 
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -26,8 +26,8 @@
 #import "CHPTweakList.h"
 #import "CHPTweakInfo.h"
 #import "CHPMachoParser.h"
-
-extern BOOL customTweakConfigurationWorks;
+#import "CHPRootListController.h"
+#import "CHPDPKGFetcher.h"
 
 @interface PSSpecifier ()
 @property (nonatomic,retain) NSArray* values;
@@ -105,7 +105,7 @@ extern BOOL customTweakConfigurationWorks;
 		if(_isApplication)
 		{
 			NSString* applicationIdentifier = [[self specifier] propertyForKey:@"key"];
-			NSString* applicationExecutablePath = [[ALApplicationList sharedApplicationList] valueForKeyPath:@"info.choicy_executablePath" forDisplayIdentifier:applicationIdentifier];
+			NSString* applicationExecutablePath = [[ALApplicationList sharedApplicationList] valueForKeyPath:@"info.executableURL.path" forDisplayIdentifier:applicationIdentifier];
 			if(!applicationExecutablePath)
 			{
 				NSString* bundlePath = [[ALApplicationList sharedApplicationList] valueForKeyPath:@"path" forDisplayIdentifier:applicationIdentifier];
@@ -119,13 +119,14 @@ extern BOOL customTweakConfigurationWorks;
 				}				
 			}
 
-			if([applicationIdentifier isEqualToString:@"com.apple.Preferences"])
+			//Applist fails to provide the executable path for springboard, so we just set it manually
+			if([applicationIdentifier isEqualToString:@"com.apple.springboard"])
 			{
-				[specifiers removeObjectAtIndex:0];
+				applicationExecutablePath = @"/System/Library/CoreServices/SpringBoard.app/SpringBoard";
 			}
 
-			NSSet* linkedFrameworkIdentifiers = frameworkBundleIDsForMachoAtPath(nil, applicationExecutablePath);
-			tweakList = [[CHPTweakList sharedInstance] tweakListForApplicationWithIdentifier:applicationIdentifier linkedFrameworkIdentifiers:linkedFrameworkIdentifiers];
+			NSSet* linkedFrameworkIdentifiers = frameworkBundleIDsForMachoAtPath(applicationExecutablePath);
+			tweakList = [[CHPTweakList sharedInstance] tweakListForApplicationWithIdentifier:applicationIdentifier executableName:applicationExecutablePath.lastPathComponent linkedFrameworkIdentifiers:linkedFrameworkIdentifiers];
 		}
 		else
 		{
@@ -164,9 +165,16 @@ extern BOOL customTweakConfigurationWorks;
 
 		for(CHPTweakInfo* tweakInfo in tweakList)
 		{
-			if([tweakInfo.dylibName containsString:@"Choicy"] || [tweakInfo.dylibName isEqualToString:@"PreferenceLoader"])
+			if([tweakInfo.dylibName containsString:@"Choicy"] || [tweakInfo.dylibName isEqualToString:@"PreferenceLoader"] || [tweakInfo.dylibName isEqualToString:@"AppList"])
 			{
 				continue;
+			}
+
+			BOOL enabled = YES;
+
+			if([dylibsBeforeChoicy containsObject:tweakInfo.dylibName])
+			{
+				enabled = NO;
 			}
 
 			PSSpecifier* tweakSpecifier = [PSSpecifier preferenceSpecifierNamed:tweakInfo.dylibName
@@ -177,9 +185,16 @@ extern BOOL customTweakConfigurationWorks;
 						  cell:PSSwitchCell
 						  edit:nil];
 			
-			[tweakSpecifier setProperty:@YES forKey:@"enabled"];
+			[tweakSpecifier setProperty:NSClassFromString(@"CHPSubtitleSwitch") forKey:@"cellClass"];
+			[tweakSpecifier setProperty:@(enabled) forKey:@"enabled"];
 			[tweakSpecifier setProperty:tweakInfo.dylibName forKey:@"key"];
 			[tweakSpecifier setProperty:@NO forKey:@"default"];
+
+			NSString* package = [[CHPDPKGFetcher sharedInstance] getPackageNameForDylibWithName:tweakInfo.dylibName];
+			if(package)
+			{
+				[tweakSpecifier setProperty:[NSString stringWithFormat:@"%@: %@", localize(@"PACKAGE"), package] forKey:@"subtitle"];
+			}
 
 			[_customConfigurationSpecifiers addObject:tweakSpecifier];
 		}
@@ -201,6 +216,7 @@ extern BOOL customTweakConfigurationWorks;
 {
 	[super reloadSpecifiers];
 	[self updateTopSwitchesAvailability];
+	[self updateTweakConfigurationAvailability];
 }
 
 - (void)updateTopSwitchesAvailability
@@ -209,23 +225,50 @@ extern BOOL customTweakConfigurationWorks;
 	PSSpecifier* customTweakConfigurationSpecifier = [self specifierForID:@"CUSTOM_TWEAK_CONFIGURATION"];
 
 	NSNumber* disableTweakInjectionNum = [self readPreferenceValue:disableTweakInjectionSpecifier];
-	[customTweakConfigurationSpecifier setProperty:@(!disableTweakInjectionNum.boolValue) forKey:@"enabled"];
-
 	NSNumber* customTweakConfigurationNum = [self readPreferenceValue:customTweakConfigurationSpecifier];
-	[disableTweakInjectionSpecifier setProperty:@(!customTweakConfigurationNum.boolValue) forKey:@"enabled"];
 
-	if(!customTweakConfigurationWorks)
+	//handle the edge case where a user managed to enable both at the same time
+	if([disableTweakInjectionNum boolValue] && [customTweakConfigurationNum boolValue])
 	{
-		[customTweakConfigurationSpecifier setProperty:@NO forKey:@"enabled"];
+		[disableTweakInjectionSpecifier setProperty:@(YES) forKey:@"enabled"];
+		[customTweakConfigurationSpecifier setProperty:@(YES) forKey:@"enabled"];
+	}
+	else
+	{
+		[disableTweakInjectionSpecifier setProperty:@(!customTweakConfigurationNum.boolValue) forKey:@"enabled"];
+		[customTweakConfigurationSpecifier setProperty:@(!disableTweakInjectionNum.boolValue) forKey:@"enabled"];
+	}
 
-		if(!_isApplication || _isSpringboard)
+	NSString* applicationIdentifier = [[self specifier] propertyForKey:@"key"];
+	if([applicationIdentifier isEqualToString:@"com.apple.Preferences"])
+	{
+		if(![disableTweakInjectionNum boolValue])
 		{
-			[disableTweakInjectionSpecifier setProperty:@NO forKey:@"enabled"];
+			[disableTweakInjectionSpecifier setProperty:@(NO) forKey:@"enabled"];
 		}
 	}
 
 	[self reloadSpecifier:disableTweakInjectionSpecifier];
 	[self reloadSpecifier:customTweakConfigurationSpecifier];
+}
+
+- (void)updateTweakConfigurationAvailability
+{
+	PSSpecifier* customTweakConfigurationSpecifier = [self specifierForID:@"CUSTOM_TWEAK_CONFIGURATION"];
+	NSNumber* customTweakConfigurationNum = [self readPreferenceValue:customTweakConfigurationSpecifier];
+
+	if(customTweakConfigurationNum.boolValue)
+	{
+		for(PSSpecifier* specifier in _customConfigurationSpecifiers)
+		{
+			NSString* key = [specifier propertyForKey:@"key"];
+			if([dylibsBeforeChoicy containsObject:key])
+			{
+				[customTweakConfigurationSpecifier setProperty:@NO forKey:@"enabled"];
+				[self reloadSpecifier:customTweakConfigurationSpecifier];
+			}
+		}
+	}
 }
 
 - (void)setValue:(id)value forTweakWithSpecifier:(PSSpecifier*)specifier
@@ -268,8 +311,21 @@ extern BOOL customTweakConfigurationWorks;
 {
 	BOOL tweakEnabled;
 	NSString* key = [specifier propertyForKey:@"key"];
+	NSInteger segmentValue = ((NSNumber*)[self readPreferenceValue:_segmentSpecifier]).intValue;
 
-	if(((NSNumber*)[self readPreferenceValue:_segmentSpecifier]).intValue == 1)
+	if([dylibsBeforeChoicy containsObject:key])
+	{
+		if(segmentValue == 1)
+		{
+			return @1;
+		}
+		else
+		{
+			return @0;
+		}
+	}
+
+	if(segmentValue == 1)
 	{
 		tweakEnabled = [_tweakWhitelist containsObject:key];
 	}

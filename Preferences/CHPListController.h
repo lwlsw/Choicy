@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2020 Lars Fröder
+// Copyright (c) 2019-2021 Lars Fröder
 
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -21,7 +21,11 @@
 #import <Preferences/PSListController.h>
 #import <Preferences/PSSpecifier.h>
 
-@interface CHPListController : PSListController
+@interface CHPListController : PSListController <UISearchResultsUpdating> {
+    NSString *_searchKey;
+    UISearchController *_searchController;
+}
+- (void)applySearchControllerHideWhileScrolling:(BOOL)hideWhileScrolling;
 - (NSString*)topTitle;
 - (NSString*)plistName;
 - (void)parseLocalizationsForSpecifiers:(NSArray*)specifiers;

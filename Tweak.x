@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2020 Lars Fröder
+// Copyright (c) 2019-2021 Lars Fröder
 
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -19,9 +19,11 @@
 // SOFTWARE.
 
 #import "Shared.h"
-
+#import <substrate.h>
 #import <dlfcn.h>
-//#import <mach-o/dyld.h>
+
+BOOL tweakInjectionDisabled = NO;
+BOOL customTweakConfigurationEnabled = NO;
 
 NSArray* tweakWhitelist;
 NSArray* tweakBlacklist;
@@ -30,6 +32,31 @@ NSArray* globalTweakBlacklist;
 BOOL allowBlacklistOverwrites;
 BOOL allowWhitelistOverwrites;
 BOOL isApplication;
+
+NSString* bundleIdentifier;
+
+//methods of getting executablePath and bundleIdentifier with the least side effects possible
+//for more information, check out https://github.com/checkra1n/BugTracker/issues/343
+extern char*** _NSGetArgv();
+NSString* safe_getExecutablePath()
+{
+	char* executablePathC = **_NSGetArgv();
+	return [NSString stringWithUTF8String:executablePathC];
+}
+
+NSString* safe_getBundleIdentifier()
+{
+	CFBundleRef mainBundle = CFBundleGetMainBundle();
+
+	if(mainBundle != NULL)
+	{
+		CFStringRef bundleIdentifierCF = CFBundleGetIdentifier(mainBundle);
+
+		return (__bridge NSString*)bundleIdentifierCF;
+	}
+
+	return nil;
+}
 
 BOOL isTweakDylib(NSString* dylibPath)
 {
@@ -63,21 +90,6 @@ BOOL isTweakDylib(NSString* dylibPath)
 					}
 				}
 			}
-
-			/*NSDictionary* bundles = [filter objectForKey:@"Bundles"];
-			NSDictionary* executables = [filter objectForKey:@"Executables"];
-			NSDictionary* classes = [filter objectForKey:@"Classes"];
-
-			HBLogDebug(@"filter = %@", filter);
-			HBLogDebug(@"bundles = %@", bundles);
-			HBLogDebug(@"executables = %@", executables);
-			HBLogDebug(@"classes = %@", classes);
-
-			if(bundles.count > 0 || executables.count > 0 || classes.count > 0)
-			{
-				
-				return YES;
-			}*/
 		}
 	}
 
@@ -92,24 +104,46 @@ BOOL shouldLoadDylib(NSString* dylibPath)
 		NSString* dylibName = [dylibPath.lastPathComponent stringByDeletingPathExtension];
 
 		HBLogDebug(@"Checking whether %@ should be loaded", dylibName);
-		HBLogDebug(@"tweakWhitelist = %@", tweakWhitelist);
-		HBLogDebug(@"tweakBlacklist = %@", tweakBlacklist);
-		HBLogDebug(@"globalTweakBlacklist = %@", globalTweakBlacklist);
 
+		//Don't prevent ChoicySB from loading into SpringBoard cause otherwise the 3d shortcuts and disabling tweaks inside applications doesn't work
 		if([dylibName isEqualToString:@"ChoicySB"])
 		{
 			HBLogDebug(@"Loaded because ChoicySB");
 			return YES;
 		}
 
+		if([dylibName isEqualToString:@"   Choicy"])
+		{
+			HBLogDebug(@"Loaded because Choicy main dylib");
+			return YES;
+		}
+
+		//Don't prevent AppList from loading into SpringBoard cause otherwise the Choicy application settings break
+		if([bundleIdentifier isEqualToString:@"com.apple.springboard"] && [dylibName isEqualToString:@"AppList"])
+		{
+			HBLogDebug(@"Loaded because AppList");
+			return YES;
+		}
+
 		if(isApplication)
 		{
-			if([[NSBundle mainBundle].bundleIdentifier isEqualToString:@"com.apple.Preferences"] && [dylibName isEqualToString:@"PreferenceLoader"])
+			//Don't prevent PreferenceLoader from loading into Preferences.app cause otherwise once disabled it could never be reenabled
+			if([bundleIdentifier isEqualToString:@"com.apple.Preferences"] && [dylibName isEqualToString:@"PreferenceLoader"])
 			{
 				HBLogDebug(@"Loaded because PreferenceLoader");
 				return YES;
 			}
 		}
+
+		if(tweakInjectionDisabled)
+		{
+			HBLogDebug(@"Not loading because tweakInjectionDisabled is enabled");
+			return NO;
+		}
+
+		HBLogDebug(@"tweakWhitelist = %@", tweakWhitelist);
+		HBLogDebug(@"tweakBlacklist = %@", tweakBlacklist);
+		HBLogDebug(@"globalTweakBlacklist = %@", globalTweakBlacklist);
 
 		BOOL tweakIsInWhitelist = [tweakWhitelist containsObject:dylibName];
 		BOOL tweakIsInBlacklist = [tweakBlacklist containsObject:dylibName];
@@ -154,37 +188,8 @@ BOOL shouldLoadDylib(NSString* dylibPath)
 	return YES;
 }
 
-%group BlockAllTweaks
-
-%hookf(void *, dlopen, const char *path, int mode)
-{
-	@autoreleasepool
-	{
-		if(path != NULL)
-		{
-			NSString* dylibPath = @(path);
-
-			if(isTweakDylib(dylibPath))
-			{
-				if(![dylibPath.lastPathComponent isEqualToString:@"ChoicySB.dylib"])
-				{
-					HBLogDebug(@"%@ not loaded because all tweaks blocked", dylibPath.lastPathComponent);
-					return NULL;
-				}
-			}
-
-			HBLogDebug(@"%@ loaded because not a tweak", dylibPath.lastPathComponent);
-		}
-	}
-	
-	return %orig;
-}
-
-%end
-
-%group CustomConfiguration
-
-%hookf(void *, dlopen, const char *path, int mode)
+void* (*dlopen_internal)(const char*, int, void*);
+void* $dlopen_internal(const char *path, int mode, void* lr)
 {
 	@autoreleasepool
 	{
@@ -201,11 +206,29 @@ BOOL shouldLoadDylib(NSString* dylibPath)
 			HBLogDebug(@"%@ loaded", dylibPath.lastPathComponent);
 		}
 	}
-
-	return %orig;
+	return dlopen_internal(path, mode, lr);
 }
 
-%end
+void* (*dlopen_regular)(const char*, int);
+void* $dlopen_regular(const char *path, int mode)
+{
+	@autoreleasepool
+	{
+		if(path != NULL)
+		{
+			NSString* dylibPath = @(path);
+
+			if(!shouldLoadDylib(dylibPath))
+			{
+				HBLogDebug(@"%@ not loaded", dylibPath.lastPathComponent);
+				return NULL;
+			}
+
+			HBLogDebug(@"%@ loaded", dylibPath.lastPathComponent);
+		}
+	}
+	return dlopen_regular(path, mode);
+}
 
 %ctor
 {
@@ -215,14 +238,15 @@ BOOL shouldLoadDylib(NSString* dylibPath)
 
 		preferences = [NSDictionary dictionaryWithContentsOfFile:CHPPlistPath];
 
-		NSString* executablePath = [[NSClassFromString(@"NSProcessInfo") processInfo] arguments].firstObject;
+		NSString* executablePath = safe_getExecutablePath();
+		bundleIdentifier = safe_getBundleIdentifier();
 
 		isApplication = [executablePath containsString:@"/Application"] || [executablePath containsString:@"/CoreServices"];
 		NSDictionary* settings;
 
 		if(isApplication)
 		{
-			settings = preferencesForApplicationWithID([NSBundle mainBundle].bundleIdentifier);
+			settings = preferencesForApplicationWithID(bundleIdentifier);
 		}
 		else
 		{
@@ -235,8 +259,6 @@ BOOL shouldLoadDylib(NSString* dylibPath)
 		allowBlacklistOverwrites = ((NSNumber*)[preferences objectForKey:@"allowBlacklistOverwrites"]).boolValue;
 		allowWhitelistOverwrites = ((NSNumber*)[preferences objectForKey:@"allowWhitelistOverwrites"]).boolValue;
 
-		BOOL tweakInjectionDisabled = NO;
-		BOOL customTweakConfigurationEnabled = NO;
 		NSInteger whitelistBlacklistSegment = 0;
 
 		if(settings)
@@ -246,22 +268,19 @@ BOOL shouldLoadDylib(NSString* dylibPath)
 			whitelistBlacklistSegment = ((NSNumber*)[settings objectForKey:@"whitelistBlacklistSegment"]).intValue;
 		}
 
-		if(tweakInjectionDisabled)
+		if(tweakInjectionDisabled || customTweakConfigurationEnabled || globalTweakBlacklist.count > 0)
 		{
-			if(isApplication)
+			//If tweakInjectionDisabled is true for an application other than SpringBoard,
+			//it means that tweak injection was enabled for one launch via 3D touch and we should not do anything
+			if(isApplication && tweakInjectionDisabled)
 			{
-				if(![[NSBundle mainBundle].bundleIdentifier isEqualToString:@"com.apple.springboard"])
+				if(![bundleIdentifier isEqualToString:@"com.apple.springboard"])
 				{
-					HBLogDebug(@"exiting cause application and tweakInjectionDisabled");
+					HBLogDebug(@"tweak injection has been enabled via 3D touch, bye!");
 					return;
 				}
 			}
 
-			HBLogDebug(@"blocking all tweaks");
-			%init(BlockAllTweaks);
-		}
-		else if(customTweakConfigurationEnabled || globalTweakBlacklist.count > 0)
-		{
 			if(customTweakConfigurationEnabled)
 			{
 				if(whitelistBlacklistSegment == 2) //blacklist
@@ -274,8 +293,16 @@ BOOL shouldLoadDylib(NSString* dylibPath)
 				}
 			}
 
-			HBLogDebug(@"initialising custom configuration");
-			%init(CustomConfiguration);
+			MSImageRef libdyldImage = MSGetImageByName("/usr/lib/system/libdyld.dylib");
+
+			if(kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_14_1)
+			{
+				MSHookFunction(MSFindSymbol(libdyldImage, "__ZL15dlopen_internalPKciPv"), (void*)$dlopen_internal, (void**)&dlopen_internal);
+			}
+			else
+			{
+				MSHookFunction(MSFindSymbol(libdyldImage, "_dlopen"), (void*)$dlopen_regular, (void**)&dlopen_regular);
+			}
 		}
 	}
 }
